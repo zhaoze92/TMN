@@ -1,3 +1,5 @@
+# coding: utf-8
+
 from keras import backend as K
 from keras import regularizers
 from keras.layers import Input, Dense, Lambda, Activation, Dropout, Flatten, Bidirectional, Conv2D, MaxPool2D, Reshape, BatchNormalization, Layer, Embedding, dot
@@ -17,21 +19,38 @@ import pickle
 import gensim
 from sklearn.metrics import f1_score, accuracy_score
 
+import sys
+reload(sys)
+sys.setdefaultencoding('utf8')
+
 # check args
-if len(sys.argv) != 5:
-    print("Usage:\npython tmn_run.py <input_data_dir> <embedding_file> <output_dir> <topic_num>")
-    exit(0)
+# if len(sys.argv) != 5:
+#     print("Usage:\npython tmn_run.py <input_data_dir> <embedding_file> <output_dir> <topic_num>")
+#     exit(0)
+
 ######################## configurations ########################
-data_dir = sys.argv[1] #"../data/tmn"    # data dir
-embedding_fn = sys.argv[2] #"/data1/jichuanzeng/workspace/glove.6B.200d.txt"
-output_dir = sys.argv[3]    # output save dir
-TOPIC_NUM = int(sys.argv[4])  # topic number
+# data_dir = sys.argv[1] #"../data/tmn"    # data dir
+# embedding_fn = sys.argv[2] #"/data1/jichuanzeng/workspace/glove.6B.200d.txt"
+# output_dir = sys.argv[3]    # output save dir
+# TOPIC_NUM = int(sys.argv[4])  # topic number
+
+# # 英文训练集
+# data_dir = "../data/tmn"
+# embedding_fn = "/home/zhaoze/my-projects/34.TMN/glove.6B//glove.6B.200d.txt" #"/data1/jichuanzeng/workspace/glove.6B.200d.txt" # 使用的glove词向量
+# output_dir = "../data/tmn/out"    # output save dir.不存在会创建
+
+data_dir = "../data/multiCluster"
+embedding_fn = "../data/multiCluster/word_embed.txt" #"/data1/jichuanzeng/workspace/glove.6B.200d.txt" # 使用的glove词向量
+output_dir = "../data/multiCluster/out"    # output save dir.不存在会创建
+
+
+TOPIC_NUM = 50 # topic number
 HIDDEN_NUM = [500, 500] # hidden layer size
 TOPIC_EMB_DIM = 150 # topic memory size
-MAX_SEQ_LEN = 24    # clip length for a text
+MAX_SEQ_LEN = 10    # 文本截断长度24
 BATCH_SIZE = 32
-MAX_EPOCH = 800
-MIN_EPOCH = 50
+MAX_EPOCH = 800 # 训练800个循环
+MIN_EPOCH = 50  # 最少训练循环数
 PATIENT = 10
 PATIENT_GLOBAL = 60
 PRE_TRAIN_EPOCHS = 50
@@ -40,6 +59,7 @@ TARGET_SPARSITY = 0.75
 KL_GROWING_EPOCH = 0
 SHORTCUT = True
 TRANSFORM = None    # 'relu'|'softmax'|'tanh'
+
 ######################## configurations ########################
 
 dataSeqTrain_fn = os.path.join(data_dir, "dataMsgTrain")
@@ -51,9 +71,12 @@ dataLabelTest_fn = os.path.join(data_dir, "dataMsgLabelTest")
 
 dataDictBow_fn = os.path.join(data_dir, "dataDictBow")
 dictionary_bow = gensim.corpora.Dictionary.load(dataDictBow_fn)
+l = len(dictionary_bow)
+print("dataDictBow load done.")
 
 dataDictSeq_fn = os.path.join(data_dir, "dataDictSeq")
 dictionary_seq = gensim.corpora.Dictionary.load(dataDictSeq_fn)
+print("dataDictSeq load done.")
 
 # something need to save
 if not os.path.exists(output_dir):
@@ -70,9 +93,11 @@ seq_train = pickle.load(open(dataSeqTrain_fn, 'rb'))
 seq_test = pickle.load(open(dataSeqTest_fn, 'rb'))
 label_train = pickle.load(open(dataLabelTrain_fn, 'rb'))
 label_test = pickle.load(open(dataLabelTest_fn, 'rb'))
+print("train and test data load done.")
 
 label_dict = json.load(open(os.path.join(data_dir, "labelDict.json")))
 CATEGORY = len(label_dict)
+print("label load done")
 
 def log(logfile, text, write_to_log=True):
     print(text)
@@ -133,7 +158,6 @@ def check_sparsity(model, sparsity_threshold=1e-3):
     num_zero = np.array(np.abs(kernel) < sparsity_threshold, dtype=float).sum()
     return num_zero / float(num_weights)
 
-
 def update_l1(cur_l1, cur_sparsity, sparsity_target):
     current_l1 = K.get_value(cur_l1.l1)
     diff = sparsity_target - cur_sparsity
@@ -157,31 +181,42 @@ test_count_indices = np.sum(bow_test_ind, axis=1)
 bow_input = Input(shape=(len(dictionary_bow),), name="bow_input")     # the normalised input
 seq_input = Input(shape=(MAX_SEQ_LEN, ), dtype='int32', name='seq_input')
 embedding_mat = utils.build_embedding(embedding_fn, dictionary_seq, data_dir)
+print("加载词向量完成.")
 emb_dim = embedding_mat.shape[1]
+print("emb_dim:"+str(emb_dim))
+
 seq_emb = Embedding(len(dictionary_seq) + 1,
                     emb_dim,
                     weights=[embedding_mat],
                     input_length=MAX_SEQ_LEN,
                     trainable=False)
 topic_emb = Embedding(TOPIC_NUM, len(dictionary_bow), input_length=TOPIC_NUM, trainable=False)
+
 psudo_input = Input(shape=(TOPIC_NUM, ), dtype='int32', name="psudo_input")
 
-######################## build ntm #########################
+######################## build ntm (神经主题模型)#########################
+# ntm网络结果 encoder\generator\decoder
+
 # build encoder
-e1 = Dense(HIDDEN_NUM[0], activation='relu')
-e2 = Dense(HIDDEN_NUM[1], activation='relu')
-e3 = Dense(TOPIC_NUM)
+e1 = Dense(HIDDEN_NUM[0], activation='relu') # 500
+e2 = Dense(HIDDEN_NUM[1], activation='relu') # 500
+e3 = Dense(TOPIC_NUM) # 50
 e4 = Dense(TOPIC_NUM)
+# 先经过两个全连接
 h = e1(bow_input)
 h = e2(h)
 if SHORTCUT:
+    # 将经过2个全连接后的值和经过1个全连接后的值相加
     es = Dense(HIDDEN_NUM[1], use_bias=False)
     h = add([h, es(bow_input)])
 
+# 各经过两个50的全连接，然后进行拼接
 z_mean = e3(h)
 z_log_var = e4(h)
-# sample
+
+# sample Lambda：如果只需要对数据做个变换，并没有要学习的参数，建议使用lamda层。 目前的输出是hidden
 hidden = Lambda(sampling, output_shape=(TOPIC_NUM,))([z_mean, z_log_var])
+
 # build generator
 g1 = Dense(TOPIC_NUM, activation="tanh")
 g2 = Dense(TOPIC_NUM, activation="tanh")
@@ -203,6 +238,7 @@ def generate(h):
     else:
         return r
 
+# 再经过4个全连接层
 represent = generate(hidden)
 represent_mu = generate(z_mean)
 
@@ -211,6 +247,7 @@ l1_strength = CustomizedL1L2(l1=0.001)
 d1 = Dense(len(dictionary_bow), activation="softmax", kernel_regularizer=l1_strength, name="p_x_given_h")
 p_x_given_h = d1(represent)
 
+##################### Topic Memory Mechanism（主题记忆机制）###########################
 # build classifier
 filter_sizes = [1, 2, 3]
 num_filters = 512
@@ -243,10 +280,16 @@ wt_emb = topic_emb(psudo_input)
 wt_emb = t1(wt_emb)     # reducing dim
 # first match layer
 match = dot([x, wt_emb], axes=(2, 2))
+print(represent_mu.shape)
+print(match.shape)
+# [(None, 50), (None, 10, 50)]
+#represent_mu = Reshape((1, 50,))(represent_mu)
+#print(represent_mu.shape)
 joint_match = add([represent_mu, match])
 joint_match = f1(joint_match)
 topic_sum = add([joint_match, x])
 topic_sum = o1(topic_sum)
+
 # # second match layer
 # match = dot([topic_sum, wt_emb], axes=(2, 2))
 # joint_match = add([represent_mu, match])

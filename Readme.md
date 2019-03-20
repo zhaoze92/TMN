@@ -1,3 +1,5 @@
+原始git地址：https://github.com/zengjichuan/TMN
+
 # Topic Memory Networks for Short Text Classification
 Topic Memory Networks (TMN) employs a novel topic memory mechanism to encode
 latent topic representations indicative of class labels in short text classification. 
@@ -52,3 +54,5 @@ More detailed configurations can be found in `tmn_run.py`.
 ## Disclaimer
 
 The code is for research purpose only and released under the Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+
+模型结构：

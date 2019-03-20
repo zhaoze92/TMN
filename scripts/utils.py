@@ -1,6 +1,12 @@
+# coding: utf-8
+
 from keras import backend as K
 import numpy as np
 import os
+
+import sys
+reload(sys)
+sys.setdefaultencoding('utf8')
 
 def zero_loss(y_true, y_pred):
     return K.zeros_like(y_pred)
@@ -8,25 +14,24 @@ def zero_loss(y_true, y_pred):
 def build_embedding(embedding_fn, dictionary, data_dir):
     print("building embedding matrix for dict %d if need..." % len(dictionary))
     embedding_mat_fn = os.path.join(data_dir, "embedding_mat_%d.npy" % (len(dictionary)))
-    if os.path.exists(embedding_mat_fn):
-        embedding_mat = np.load(embedding_mat_fn)
-        return embedding_mat
+    # if os.path.exists(embedding_mat_fn):
+    #     embedding_mat = np.load(embedding_mat_fn)
+    #     return embedding_mat
     embedding_index = {}
     with open(embedding_fn) as fin:
         first_line = True
         l_id = 0
         for line in fin:
-            if l_id % 100000 == 0:
-                print("loaded %d words embedding..." % l_id)
-            if ("glove" not in embedding_fn) and first_line:
-                first_line = False
-                continue
+            # if first_line:
+            #     first_line = False
             line = line.rstrip()
-            values = line.split(' ')
+            values = line.split('\t')
             word = values[0]
-            coefs = np.asarray(values[1:], dtype='float32')
+            coefs = np.asarray(values[2:], dtype='float32')
             embedding_index[word] = coefs
             l_id += 1
+            if l_id % 100000 == 0:
+                print("loaded %d words embedding..." % l_id)
     embedding_dim = len(embedding_index.values()[0])
     embedding_mat = np.zeros((len(dictionary) + 1, embedding_dim))    # 0 is for padding
     for i, word in dictionary.items():
